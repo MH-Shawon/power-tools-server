@@ -1,10 +1,11 @@
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
+
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
-// const bodyParser = require("body-parser");
-const stripe = require("stripe")(process.env.STRIPE_SECRET);
+
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const port = process.env.PORT || 5000;
 
 const app = express();
@@ -24,8 +25,6 @@ const client = new MongoClient(uri, {
 
 // jwt related api
 
-    
-
 // const verifyAdmin = async (req, res, next) => {
 //   const email = req?.decoded?.email;
 //   const query = { email: email };
@@ -39,13 +38,11 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     const productsCollection = client.db("powerTools").collection("products");
     const ordersCollection = client.db("powerTools").collection("orders");
     const ratingCollection = client.db("powerTools").collection("reviews");
     const userCollection = client.db("powerTools").collection("users");
-
-
 
     app.post("/jwt", (req, res) => {
       const user = req.body;
@@ -66,7 +63,7 @@ async function run() {
           return res.status(403).send({ message: "Forbidden access" });
         }
         req.decoded = decoded;
-        console.log('decoded', decoded);
+        console.log("decoded", decoded);
         next();
       });
     };
@@ -76,27 +73,20 @@ async function run() {
       res.send(products);
     });
 
-    
-
-
-
-
-
-
     app.post("/products", verifyToken, async (req, res) => {
       const product = req.body;
       const result = await productsCollection.insertOne(product);
       res.send(result);
     });
     // delete product from db
-    app.delete("/products/:id", verifyToken,  async (req, res) => {
+    app.delete("/products/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await productsCollection.deleteOne(query);
       res.json(result);
     });
 
-    app.get("/products/:id",  async (req, res) => {
+    app.get("/products/:id", async (req, res) => {
       const id = req.params.id;
       const query = {
         _id: new ObjectId(id),
@@ -105,7 +95,7 @@ async function run() {
       res.send(product);
     });
 
-    app.put("/products/:id", verifyToken,  async (req, res) => {
+    app.put("/products/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
 
       const filter = {
@@ -126,6 +116,34 @@ async function run() {
       res.json(result);
     });
 
+    // checkout api
+
+    app.put("/product/:id", async (req, res) => {
+      const id = req.params.id;
+      const body = req.body.quantity;
+      const filter = {
+        _id: new ObjectId(id),
+      };
+      const updateDoc = {
+        $set: {
+          quantity: body,
+        },
+      };
+      const result = await productsCollection.updateOne(filter, updateDoc);
+      res.json(result);
+    });
+
+    app.get("/product/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = {
+        _id: new ObjectId(id),
+      };
+      const product = await productsCollection.findOne(query);
+      res.send(product);
+    });
+
+    // orders api
+
     app.post("/orders", async (req, res) => {
       const product = await ordersCollection.insertOne(req.body);
       res.send(product);
@@ -143,7 +161,7 @@ async function run() {
 
     app.delete("/delete-order/:id", async (req, res) => {
       const result = await ordersCollection.deleteOne({
-        _id: ObjectId(req.params.id),
+        _id:new ObjectId(req.params.id),
       });
       res.json(result);
     });
@@ -200,56 +218,55 @@ async function run() {
     });
 
     // user related api
-     app.get("/users/admin/:email",  async (req, res) => {
-       const email = req.params.email;
-console.log(email);
-       
-       if (email !== req?.decoded?.email) {
-         return res.status(403).send({ message: "forbidden access" });
-       }
+    app.get("/users/admin/:email", async (req, res) => {
+      const email = req.params.email;
 
-       try {
-         const user = await userCollection.findOne({ email: email });
-         const isAdmin = user?.role === "admin";
-         res.send({ admin: isAdmin });
-       } catch (error) {
-         console.error(error);
-         res.status(500).send({ message: "Internal Server Error" });
-       }
-     });
+      if (email !== req?.decoded?.email) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+
+      try {
+        const user = await userCollection.findOne({ email: email });
+        const isAdmin = user?.role === "admin";
+        res.send({ admin: isAdmin });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Internal Server Error" });
+      }
+    });
 
     app.get("/users", async (req, res) => {
       const result = await userCollection.find().toArray();
       res.send(result);
     });
-     app.get("/users/:email", async (req, res) => {
-       const email = req.params.email;
-       const result = await userCollection.findOne({ email });
-       res.send(result);
-     });
-     app.get("/user/:id", async (req, res) => {
-       const id = req.params.id;
-       const query = { _id: new ObjectId(id) };
-       const result = await userCollection.findOne(query);
-       res.send(result);
-     });
-      app.put("/users/:email", async (req, res) => {
-        const email = req.params.email;
-        const filter = { email: email };
-        const userUpdate = req.body;
-        const options = { upsert: true };
-        const updatedDoc = {
-          $set: {
-            ...userUpdate,
-          },
-        };
-        const result = await userCollection.updateOne(
-          filter,
-          updatedDoc,
-          options
-        );
-        res.send(result);
-      });
+    app.get("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const result = await userCollection.findOne({ email });
+      res.send(result);
+    });
+    app.get("/user/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await userCollection.findOne(query);
+      res.send(result);
+    });
+    app.put("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const filter = { email: email };
+      const userUpdate = req.body;
+      const options = { upsert: true };
+      const updatedDoc = {
+        $set: {
+          ...userUpdate,
+        },
+      };
+      const result = await userCollection.updateOne(
+        filter,
+        updatedDoc,
+        options
+      );
+      res.send(result);
+    });
 
     app.post("/users", async (req, res) => {
       const user = req.body;
@@ -263,7 +280,7 @@ console.log(email);
     });
 
     // make user admin
-    app.put("/users/admin/:id",  async (req, res) => {
+    app.put("/users/admin/:id", async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = {
@@ -275,58 +292,65 @@ console.log(email);
       res.send(result);
     });
 
-
-   
-
-    app.delete("/users/:id",  async (req, res) => {
+    app.delete("/users/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await userCollection.deleteOne(query);
       res.json(result);
     });
 
-    // get admin user
-    
+    //get admin user
+    app.get("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      let isAdmin = false;
+      if (user?.role === "admin") {
+        isAdmin = true;
+      }
+      res.json({ admin: isAdmin });
+    });
 
     // payment
 
     app.get("/payment/:id", async (req, res) => {
       const id = req.params.id;
       const query = {
-        _id: ObjectId(id),
+        _id: new ObjectId(id),
       };
       const product = await ordersCollection.findOne(query);
       res.json(product);
+    });
+
+    // payment method setup
+    app.post("/create-payment-intent", async (req, res) => {
+      const { price } = req.body;
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: parseInt(price * 100), // Convert to cents
+        currency: "usd",
+      });
+
+      res.send({
+        clientSecret: paymentIntent.client_secret,
+      });
     });
 
     // update order after payment successful
     app.post("/payment/:id", async (req, res) => {
       const id = req.params.id;
       const payment = req.body;
-      const filter = {
-        _id: ObjectId(id),
-      };
+
+      const filter = { _id: new ObjectId(id) };
       const updateDoc = {
         $set: {
-          payment: payment,
+          payment,
+          status: "Paid",
         },
       };
+
       const result = await ordersCollection.updateOne(filter, updateDoc);
       res.json(result);
-    });
-
-    // payment method setup
-    app.post("/create-payment-intent", async (req, res) => {
-      const paymentInfo = req.body;
-      const amount = paymentInfo.price * 100;
-      const paymentIntent = await stripe.paymentIntents.create({
-        currency: "usd",
-        amount: amount,
-        payment_method_types: ["card"],
-      });
-      res.json({
-        clientSecret: paymentIntent.client_secret,
-      });
     });
   } finally {
   }
